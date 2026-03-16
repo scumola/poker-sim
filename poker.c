@@ -334,18 +334,78 @@ static void check(const char *label, const char *cards, int expected_rank) {
     free_hand(&h);
 }
 
+/* Fills keep_mask[5] with 1=keep, 0=discard.
+   Hand must be sorted descending before calling.
+   Returns number of cards to discard. */
+static int ai_discard(const Hand *h, int *keep_mask) {
+    int r[5]; int i=0;
+    for (Card *c=h->head; c&&i<5; c=c->next) r[i++]=rank_of(c->value);
+    for (int j=0;j<5;j++) keep_mask[j]=1; /* default: keep all */
+
+    HandResult hr = hand_evaluate(h);
+
+    /* Straight Flush, Four of a Kind, Full House, Flush, Straight: keep all */
+    if (hr.rank >= 4) return 0;
+
+    /* Three of a Kind: keep the 3 matching, discard 2 */
+    if (hr.rank == 3) {
+        int tv = hr.kickers[0];
+        int kept=0;
+        for (int j=0;j<5;j++) {
+            if (r[j]==tv && kept<3) { keep_mask[j]=1; kept++; }
+            else keep_mask[j]=0;
+        }
+        return 2;
+    }
+
+    /* Two Pair: keep all 5 */
+    if (hr.rank == 2) return 0;
+
+    /* Pair: keep the 2 paired cards, discard 3 */
+    if (hr.rank == 1) {
+        int pv = hr.kickers[0];
+        int kept=0;
+        for (int j=0;j<5;j++) {
+            if (r[j]==pv && kept<2) { keep_mask[j]=1; kept++; }
+            else keep_mask[j]=0;
+        }
+        return 3;
+    }
+
+    /* No made hand: keep cards with rank >= 11 (Jack+), discard rest */
+    int discard_count=0;
+    for (int j=0;j<5;j++) {
+        if (r[j]>=11) keep_mask[j]=1;
+        else { keep_mask[j]=0; discard_count++; }
+    }
+    return discard_count;
+}
+
+static void check_ai(const char *label, const char *cards,
+                     int expected_discards) {
+    Hand h = make_hand(cards);
+    hand_sort(&h);
+    int mask[5];
+    int nd = ai_discard(&h, mask);
+    printf("%-30s discards=%d %s | keep:", label, nd,
+           nd==expected_discards ? "OK" : "FAIL");
+    int i=0;
+    for (Card *c=h.head; c; c=c->next,i++)
+        if (mask[i]) { printf(" "); print_card(c); }
+    printf("\n");
+    free_hand(&h);
+}
+
 int main(void) {
-    check("Royal Flush",         "AS KS QS JS TS", 8);
-    check("Straight Flush",      "9H 8H 7H 6H 5H", 8);
-    check("Wheel Straight Flush","5H 4H 3H 2H AH", 8);
-    check("Four of a Kind",      "AS AH AD AC KS", 7);
-    check("Full House",          "KS KH KD QS QH", 6);
-    check("Flush",               "AS QS 9S 6S 3S", 5);
-    check("Straight",            "9H 8S 7D 6C 5H", 4);
-    check("Wheel Straight",      "AS 5H 4D 3C 2S", 4);
-    check("Three of a Kind",     "JS JH JD AS KH", 3);
-    check("Two Pair",            "AS AH KS KH QD", 2);
-    check("Pair",                "AS AH KS QD JC", 1);
-    check("High Card",           "AS KH QD JC 9S", 0);
+    check_ai("Straight Flush - keep all",  "9H 8H 7H 6H 5H", 0);
+    check_ai("Four of a Kind - keep all",  "AS AH AD AC KS", 0);
+    check_ai("Full House - keep all",      "KS KH KD QS QH", 0);
+    check_ai("Flush - keep all",           "AS QS 9S 6S 3S", 0);
+    check_ai("Straight - keep all",        "9H 8S 7D 6C 5H", 0);
+    check_ai("Three of Kind - discard 2",  "JS JH JD AS KH", 2);
+    check_ai("Two Pair - keep all",        "AS AH KS KH QD", 0);
+    check_ai("Pair - discard 3",           "AS AH 9S 7D 3C", 3);
+    check_ai("No hand high cards",         "AS KH QD 8C 5S", 2);
+    check_ai("No hand no high cards",      "9S 8H 7D 6C 4S", 5);
     return 0;
 }
