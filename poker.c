@@ -396,16 +396,66 @@ static void check_ai(const char *label, const char *cards,
     free_hand(&h);
 }
 
+/* Write human-readable hand name into buf (at least 64 bytes).
+   Hand must already be sorted and evaluated. */
+static void hand_name(const HandResult *hr, char *buf, size_t sz) {
+    int k0=hr->kickers[0], k1=hr->kickers[1];
+    switch (hr->rank) {
+        case 8:
+            if (k0==14) snprintf(buf,sz,"Royal Flush");
+            else snprintf(buf,sz,"Straight Flush, %s high",rank_singular(k0));
+            break;
+        case 7:
+            snprintf(buf,sz,"Four of a Kind, %s",rank_plural(k0));
+            break;
+        case 6:
+            snprintf(buf,sz,"Full House, %s full of %s",
+                     rank_plural(k0),rank_plural(k1));
+            break;
+        case 5:
+            snprintf(buf,sz,"Flush, %s high",rank_singular(k0));
+            break;
+        case 4:
+            snprintf(buf,sz,"Straight, %s high",rank_singular(k0));
+            break;
+        case 3:
+            snprintf(buf,sz,"Three of a Kind, %s",rank_plural(k0));
+            break;
+        case 2:
+            snprintf(buf,sz,"Two Pair, %s and %s",
+                     rank_plural(k0),rank_plural(k1));
+            break;
+        case 1:
+            snprintf(buf,sz,"Pair of %s",rank_plural(k0));
+            break;
+        default:
+            snprintf(buf,sz,"High Card, %s high",rank_singular(k0));
+            break;
+    }
+}
+
+static void check_name(const char *cards, const char *expected) {
+    Hand h = make_hand(cards);
+    hand_sort(&h);
+    HandResult hr = hand_evaluate(&h);
+    char buf[64];
+    hand_name(&hr, buf, sizeof(buf));
+    printf("%s → \"%s\" %s\n", cards, buf,
+           strcmp(buf,expected)==0 ? "OK" : "FAIL");
+    free_hand(&h);
+}
+
 int main(void) {
-    check_ai("Straight Flush - keep all",  "9H 8H 7H 6H 5H", 0);
-    check_ai("Four of a Kind - keep all",  "AS AH AD AC KS", 0);
-    check_ai("Full House - keep all",      "KS KH KD QS QH", 0);
-    check_ai("Flush - keep all",           "AS QS 9S 6S 3S", 0);
-    check_ai("Straight - keep all",        "9H 8S 7D 6C 5H", 0);
-    check_ai("Three of Kind - discard 2",  "JS JH JD AS KH", 2);
-    check_ai("Two Pair - keep all",        "AS AH KS KH QD", 0);
-    check_ai("Pair - discard 3",           "AS AH 9S 7D 3C", 3);
-    check_ai("No hand high cards",         "AS KH QD 8C 5S", 2);
-    check_ai("No hand no high cards",      "9S 8H 7D 6C 4S", 5);
+    check_name("AS KS QS JS TS", "Royal Flush");
+    check_name("9H 8H 7H 6H 5H", "Straight Flush, Nine high");
+    check_name("AS 5H 4D 3C 2S", "Straight, Five high");
+    check_name("AS AH AD AC KS", "Four of a Kind, Aces");
+    check_name("KS KH KD QS QH", "Full House, Kings full of Queens");
+    check_name("AS QS 9S 6S 3S", "Flush, Ace high");
+    check_name("9H 8S 7D 6C 5H", "Straight, Nine high");
+    check_name("JS JH JD AS KH", "Three of a Kind, Jacks");
+    check_name("AS AH KS KH QD", "Two Pair, Aces and Kings");
+    check_name("AS AH 9S 7D 3C", "Pair of Aces");
+    check_name("AS KH QD JC 9S", "High Card, Ace high");
     return 0;
 }
