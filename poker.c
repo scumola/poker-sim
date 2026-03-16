@@ -126,6 +126,8 @@ static void deck_shuffle(Hand *deck) {
     int n = 0;
     for (Card *c = deck->head; c; c = c->next)
         arr[n++] = c;
+    if (n == 0) return;
+    if (n > 52) { fprintf(stderr, "deck_shuffle: too many cards (%d)\n", n); exit(1); }
     for (int i = n - 1; i > 0; i--) {
         int j = rand() % (i + 1);
         Card *tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
