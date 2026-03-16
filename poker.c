@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 /* ── Data structures ─────────────────────────────────────────── */
 
@@ -436,7 +437,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    srand((unsigned)time(NULL));
+    srand((unsigned)time(NULL) ^ (unsigned)getpid());
 
     Hand deck    = deck_init();
     Hand discard = {NULL, 0};
