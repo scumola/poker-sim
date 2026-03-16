@@ -187,31 +187,41 @@ static int draw_cards(Hand *deck, Hand *player, int n) {
     return drawn;
 }
 
+/* sort hand descending by rank (insertion sort on linked list) */
+static void hand_sort(Hand *h) {
+    if (!h->head || !h->head->next) return;
+    Card *sorted = NULL;
+    Card *cur = h->head;
+    while (cur) {
+        Card *next = cur->next;
+        cur->next = NULL;
+        /* insert cur into sorted list in descending rank order */
+        if (!sorted || rank_of(cur->value) >= rank_of(sorted->value)) {
+            cur->next = sorted;
+            sorted = cur;
+        } else {
+            Card *s = sorted;
+            while (s->next && rank_of(s->next->value) > rank_of(cur->value))
+                s = s->next;
+            cur->next = s->next;
+            s->next = cur;
+        }
+        cur = next;
+    }
+    h->head = sorted;
+}
+
 int main(void) {
     srand((unsigned)time(NULL));
     Hand deck = deck_init();
     deck_shuffle(&deck);
     Hand player = {NULL, 0};
-    Hand discard = {NULL, 0};
-
     deal(&deck, &player, 5);
-    printf("Dealt: "); print_hand(&player); printf("\n");
-    printf("Deck remaining: %d\n", deck.count);
-
-    /* discard cards at index 1 and 3 */
-    int mask[5] = {1, 0, 1, 0, 1};
-    int nd = discard_cards(&player, &discard, mask);
-    printf("Discarded %d. Hand now: ", nd); print_hand(&player); printf("\n");
-
-    int drawn = draw_cards(&deck, &player, nd);
-    printf("Drew %d. Final hand: ", drawn); print_hand(&player); printf("\n");
-    printf("Deck remaining: %d  Discard pile: %d\n",
-           deck.count, discard.count);
-
-    /* free all */
+    printf("Before sort: "); print_hand(&player); printf("\n");
+    hand_sort(&player);
+    printf("After sort:  "); print_hand(&player); printf("\n");
     Card *c, *nx;
-    for (c = deck.head;    c; c = nx) { nx=c->next; free(c); }
-    for (c = discard.head; c; c = nx) { nx=c->next; free(c); }
-    for (c = player.head;  c; c = nx) { nx=c->next; free(c); }
+    for (c = deck.head;   c; c = nx) { nx=c->next; free(c); }
+    for (c = player.head; c; c = nx) { nx=c->next; free(c); }
     return 0;
 }
