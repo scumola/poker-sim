@@ -74,11 +74,81 @@ static void print_hand(const Hand *h) {
     }
 }
 
-/* ── Temporary main to verify compile ───────────────────────── */
+/* ── Linked-list helpers ─────────────────────────────────────── */
+
+/* append card to tail of hand */
+static void hand_append(Hand *h, Card *c) {
+    c->next = NULL;
+    if (!h->head) {
+        h->head = c;
+    } else {
+        Card *t = h->head;
+        while (t->next) t = t->next;
+        t->next = c;
+    }
+    h->count++;
+}
+
+/* remove and return head card; returns NULL if empty */
+static Card *hand_pop(Hand *h) {
+    if (!h->head) return NULL;
+    Card *c = h->head;
+    h->head = c->next;
+    c->next = NULL;
+    h->count--;
+    return c;
+}
+
+/* ── Deck ────────────────────────────────────────────────────── */
+
+static const char VALUES[] = "23456789TJQKA";
+static const char SUITS[]  = "SHDC";
+
+/* allocate all 52 Card nodes and return them as a Hand */
+static Hand deck_init(void) {
+    Hand deck = {NULL, 0};
+    for (int s = 0; s < 4; s++) {
+        for (int v = 0; v < 13; v++) {
+            Card *c = malloc(sizeof(Card));
+            if (!c) { fprintf(stderr, "malloc failed\n"); exit(1); }
+            c->value = VALUES[v];
+            c->suit  = SUITS[s];
+            c->next  = NULL;
+            hand_append(&deck, c);
+        }
+    }
+    return deck;
+}
+
+/* Fisher-Yates shuffle: collect into temp array, shuffle, relink */
+static void deck_shuffle(Hand *deck) {
+    Card *arr[52];
+    int n = 0;
+    for (Card *c = deck->head; c; c = c->next)
+        arr[n++] = c;
+    for (int i = n - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        Card *tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+    /* relink */
+    deck->head = arr[0];
+    for (int i = 0; i < n - 1; i++) arr[i]->next = arr[i+1];
+    arr[n-1]->next = NULL;
+    deck->count = n;
+}
+
 int main(void) {
-    printf("rank_of('A')=%d rank_of('T')=%d rank_of('2')=%d\n",
-           rank_of('A'), rank_of('T'), rank_of('2'));
-    printf("singular(11)=%s plural(14)=%s\n",
-           rank_singular(11), rank_plural(14));
+    srand((unsigned)time(NULL));
+    Hand deck = deck_init();
+    deck_shuffle(&deck);
+    printf("Deck (%d cards):\n", deck.count);
+    int i = 0;
+    for (Card *c = deck.head; c; c = c->next) {
+        print_card(c);
+        printf("%s", (++i % 13 == 0) ? "\n" : " ");
+    }
+    /* free */
+    Card *c = deck.head, *nx;
+    while (c) { nx = c->next; free(c); c = nx; }
     return 0;
 }
