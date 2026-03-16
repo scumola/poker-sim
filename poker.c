@@ -139,18 +139,79 @@ static void deck_shuffle(Hand *deck) {
     deck->count = n;
 }
 
+/* deal `n` cards from deck head to player hand */
+static void deal(Hand *deck, Hand *player, int n) {
+    for (int i = 0; i < n; i++) {
+        Card *c = hand_pop(deck);
+        if (!c) break;
+        hand_append(player, c);
+    }
+}
+
+/* move cards NOT in keep_mask[] to discard pile.
+   keep_mask: array of `hand->count` booleans (1=keep, 0=discard).
+   Returns number of cards discarded. */
+static int discard_cards(Hand *player, Hand *discard, int *keep_mask) {
+    Card *prev = NULL;
+    Card *c = player->head;
+    int discarded = 0;
+    int idx = 0;
+    while (c) {
+        Card *next = c->next;
+        if (!keep_mask[idx]) {
+            /* unlink from player */
+            if (prev) prev->next = next;
+            else       player->head = next;
+            player->count--;
+            /* append to discard */
+            hand_append(discard, c);
+            discarded++;
+        } else {
+            prev = c;
+        }
+        c = next;
+        idx++;
+    }
+    return discarded;
+}
+
+/* draw replacement cards from deck head into player hand */
+static int draw_cards(Hand *deck, Hand *player, int n) {
+    int drawn = 0;
+    for (int i = 0; i < n; i++) {
+        Card *c = hand_pop(deck);
+        if (!c) break;
+        hand_append(player, c);
+        drawn++;
+    }
+    return drawn;
+}
+
 int main(void) {
     srand((unsigned)time(NULL));
     Hand deck = deck_init();
     deck_shuffle(&deck);
-    printf("Deck (%d cards):\n", deck.count);
-    int i = 0;
-    for (Card *c = deck.head; c; c = c->next) {
-        print_card(c);
-        printf("%s", (++i % 13 == 0) ? "\n" : " ");
-    }
-    /* free */
-    Card *c = deck.head, *nx;
-    while (c) { nx = c->next; free(c); c = nx; }
+    Hand player = {NULL, 0};
+    Hand discard = {NULL, 0};
+
+    deal(&deck, &player, 5);
+    printf("Dealt: "); print_hand(&player); printf("\n");
+    printf("Deck remaining: %d\n", deck.count);
+
+    /* discard cards at index 1 and 3 */
+    int mask[5] = {1, 0, 1, 0, 1};
+    int nd = discard_cards(&player, &discard, mask);
+    printf("Discarded %d. Hand now: ", nd); print_hand(&player); printf("\n");
+
+    int drawn = draw_cards(&deck, &player, nd);
+    printf("Drew %d. Final hand: ", drawn); print_hand(&player); printf("\n");
+    printf("Deck remaining: %d  Discard pile: %d\n",
+           deck.count, discard.count);
+
+    /* free all */
+    Card *c, *nx;
+    for (c = deck.head;    c; c = nx) { nx=c->next; free(c); }
+    for (c = discard.head; c; c = nx) { nx=c->next; free(c); }
+    for (c = player.head;  c; c = nx) { nx=c->next; free(c); }
     return 0;
 }
