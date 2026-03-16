@@ -445,6 +445,32 @@ static void check_name(const char *cards, const char *expected) {
     free_hand(&h);
 }
 
+/* returns 1 if hand (sorted descending) is a wheel straight A-2-3-4-5 */
+static int is_wheel(const Hand *h) {
+    if (h->count != 5) return 0;
+    int r[5]; int i=0;
+    for (Card *c=h->head; c&&i<5; c=c->next) r[i++]=rank_of(c->value);
+    return (r[0]==14 && r[1]==5 && r[2]==4 && r[3]==3 && r[4]==2);
+}
+
+/* print hand for display:
+   - normal: already sorted descending, just call print_hand
+   - wheel:  print 5,4,3,2,A (skip Ace at head, print it last) */
+static void print_hand_display(const Hand *h) {
+    if (!is_wheel(h)) {
+        print_hand(h);
+        return;
+    }
+    /* wheel: skip head (Ace), print rest, then Ace */
+    int first=1;
+    for (Card *c=h->head->next; c; c=c->next) {
+        if (!first) printf(" ");
+        print_card(c);
+        first=0;
+    }
+    printf(" "); print_card(h->head);
+}
+
 int main(void) {
     check_name("AS KS QS JS TS", "Royal Flush");
     check_name("9H 8H 7H 6H 5H", "Straight Flush, Nine high");
