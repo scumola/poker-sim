@@ -211,17 +211,141 @@ static void hand_sort(Hand *h) {
     h->head = sorted;
 }
 
+/* evaluate a 5-card hand (must be sorted descending first).
+   Returns HandResult with rank and kickers per spec. */
+static HandResult hand_evaluate(const Hand *h) {
+    int r[5];  /* ranks, descending */
+    char s[5]; /* suits */
+    int i = 0;
+    for (Card *c = h->head; c && i < 5; c = c->next) {
+        r[i] = rank_of(c->value);
+        s[i] = c->suit;
+        i++;
+    }
+
+    HandResult res = {0, {0,0,0,0,0}};
+
+    /* flush? */
+    int flush = (s[0]==s[1] && s[1]==s[2] && s[2]==s[3] && s[3]==s[4]);
+
+    /* straight? (normal) */
+    int straight = 0;
+    int straight_top = r[0];
+    if (r[0]-r[4]==4 && r[1]-r[2]==1 && r[2]-r[3]==1 && r[3]-r[4]==1
+        && r[0]-r[1]==1) {
+        straight = 1;
+    }
+    /* wheel: A-2-3-4-5 → sorted as 14,5,4,3,2 */
+    if (r[0]==14 && r[1]==5 && r[2]==4 && r[3]==3 && r[4]==2) {
+        straight = 1;
+        straight_top = 5; /* wheel high is 5, not Ace */
+    }
+
+    /* count value frequencies */
+    int freq[15] = {0}; /* index = rank */
+    for (int j = 0; j < 5; j++) freq[r[j]]++;
+
+    int four=0, three=0, pairs=0;
+    int four_val=0, three_val=0, pair_vals[2]={0,0};
+    for (int v = 14; v >= 2; v--) {
+        if (freq[v]==4) { four=1; four_val=v; }
+        else if (freq[v]==3) { three=1; three_val=v; }
+        else if (freq[v]==2) { if (!pairs) pair_vals[0]=v; else pair_vals[1]=v; pairs++; }
+    }
+
+    /* classify */
+    if (straight && flush) {
+        res.rank = 8;
+        res.kickers[0] = straight_top;
+    } else if (four) {
+        res.rank = 7;
+        res.kickers[0] = four_val;
+        /* kicker = the non-quad card */
+        for (int j=0;j<5;j++) if(r[j]!=four_val){res.kickers[1]=r[j]; break;}
+    } else if (three && pairs==1) {
+        res.rank = 6;
+        res.kickers[0] = three_val;
+        res.kickers[1] = pair_vals[0];
+    } else if (flush) {
+        res.rank = 5;
+        for (int j=0;j<5;j++) res.kickers[j]=r[j];
+    } else if (straight) {
+        res.rank = 4;
+        res.kickers[0] = straight_top;
+    } else if (three) {
+        res.rank = 3;
+        res.kickers[0] = three_val;
+        int ki=1;
+        for (int j=0;j<5;j++) if(r[j]!=three_val) res.kickers[ki++]=r[j];
+    } else if (pairs==2) {
+        res.rank = 2;
+        res.kickers[0] = pair_vals[0]; /* higher pair */
+        res.kickers[1] = pair_vals[1]; /* lower pair */
+        for (int j=0;j<5;j++)
+            if(r[j]!=pair_vals[0]&&r[j]!=pair_vals[1]){res.kickers[2]=r[j];break;}
+    } else if (pairs==1) {
+        res.rank = 1;
+        res.kickers[0] = pair_vals[0];
+        int ki=1;
+        for (int j=0;j<5;j++) if(r[j]!=pair_vals[0]) res.kickers[ki++]=r[j];
+    } else {
+        res.rank = 0;
+        for (int j=0;j<5;j++) res.kickers[j]=r[j];
+    }
+    return res;
+}
+
+/* compare two HandResults: >0 if a wins, <0 if b wins, 0 if tie */
+static int hand_compare(const HandResult *a, const HandResult *b) {
+    if (a->rank != b->rank) return a->rank - b->rank;
+    for (int i = 0; i < 5; i++) {
+        if (a->kickers[i] != b->kickers[i])
+            return a->kickers[i] - b->kickers[i];
+    }
+    return 0;
+}
+
+/* helper: build a hand from a string like "AS KH QD JC TS" */
+static Hand make_hand(const char *cards) {
+    Hand h = {NULL, 0};
+    const char *p = cards;
+    while (*p) {
+        Card *c = malloc(sizeof(Card));
+        c->value = p[0]; c->suit = p[1]; c->next = NULL;
+        hand_append(&h, c);
+        p += 2;
+        while (*p == ' ') p++;
+    }
+    return h;
+}
+
+static void free_hand(Hand *h) {
+    Card *c = h->head, *nx;
+    while (c) { nx=c->next; free(c); c=nx; }
+    h->head=NULL; h->count=0;
+}
+
+static void check(const char *label, const char *cards, int expected_rank) {
+    Hand h = make_hand(cards);
+    hand_sort(&h);
+    HandResult r = hand_evaluate(&h);
+    printf("%-30s rank=%d %s\n", label, r.rank,
+           r.rank==expected_rank ? "OK" : "FAIL");
+    free_hand(&h);
+}
+
 int main(void) {
-    srand((unsigned)time(NULL));
-    Hand deck = deck_init();
-    deck_shuffle(&deck);
-    Hand player = {NULL, 0};
-    deal(&deck, &player, 5);
-    printf("Before sort: "); print_hand(&player); printf("\n");
-    hand_sort(&player);
-    printf("After sort:  "); print_hand(&player); printf("\n");
-    Card *c, *nx;
-    for (c = deck.head;   c; c = nx) { nx=c->next; free(c); }
-    for (c = player.head; c; c = nx) { nx=c->next; free(c); }
+    check("Royal Flush",         "AS KS QS JS TS", 8);
+    check("Straight Flush",      "9H 8H 7H 6H 5H", 8);
+    check("Wheel Straight Flush","5H 4H 3H 2H AH", 8);
+    check("Four of a Kind",      "AS AH AD AC KS", 7);
+    check("Full House",          "KS KH KD QS QH", 6);
+    check("Flush",               "AS QS 9S 6S 3S", 5);
+    check("Straight",            "9H 8S 7D 6C 5H", 4);
+    check("Wheel Straight",      "AS 5H 4D 3C 2S", 4);
+    check("Three of a Kind",     "JS JH JD AS KH", 3);
+    check("Two Pair",            "AS AH KS KH QD", 2);
+    check("Pair",                "AS AH KS QD JC", 1);
+    check("High Card",           "AS KH QD JC 9S", 0);
     return 0;
 }
