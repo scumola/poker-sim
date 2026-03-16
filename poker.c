@@ -305,34 +305,6 @@ static int hand_compare(const HandResult *a, const HandResult *b) {
     return 0;
 }
 
-/* helper: build a hand from a string like "AS KH QD JC TS" */
-static Hand make_hand(const char *cards) {
-    Hand h = {NULL, 0};
-    const char *p = cards;
-    while (*p) {
-        Card *c = malloc(sizeof(Card));
-        c->value = p[0]; c->suit = p[1]; c->next = NULL;
-        hand_append(&h, c);
-        p += 2;
-        while (*p == ' ') p++;
-    }
-    return h;
-}
-
-static void free_hand(Hand *h) {
-    Card *c = h->head, *nx;
-    while (c) { nx=c->next; free(c); c=nx; }
-    h->head=NULL; h->count=0;
-}
-
-static void check(const char *label, const char *cards, int expected_rank) {
-    Hand h = make_hand(cards);
-    hand_sort(&h);
-    HandResult r = hand_evaluate(&h);
-    printf("%-30s rank=%d %s\n", label, r.rank,
-           r.rank==expected_rank ? "OK" : "FAIL");
-    free_hand(&h);
-}
 
 /* Fills keep_mask[5] with 1=keep, 0=discard.
    Hand must be sorted descending before calling.
@@ -381,20 +353,6 @@ static int ai_discard(const Hand *h, int *keep_mask) {
     return discard_count;
 }
 
-static void check_ai(const char *label, const char *cards,
-                     int expected_discards) {
-    Hand h = make_hand(cards);
-    hand_sort(&h);
-    int mask[5];
-    int nd = ai_discard(&h, mask);
-    printf("%-30s discards=%d %s | keep:", label, nd,
-           nd==expected_discards ? "OK" : "FAIL");
-    int i=0;
-    for (Card *c=h.head; c; c=c->next,i++)
-        if (mask[i]) { printf(" "); print_card(c); }
-    printf("\n");
-    free_hand(&h);
-}
 
 /* Write human-readable hand name into buf (at least 64 bytes).
    Hand must already be sorted and evaluated. */
@@ -434,16 +392,6 @@ static void hand_name(const HandResult *hr, char *buf, size_t sz) {
     }
 }
 
-static void check_name(const char *cards, const char *expected) {
-    Hand h = make_hand(cards);
-    hand_sort(&h);
-    HandResult hr = hand_evaluate(&h);
-    char buf[64];
-    hand_name(&hr, buf, sizeof(buf));
-    printf("%s → \"%s\" %s\n", cards, buf,
-           strcmp(buf,expected)==0 ? "OK" : "FAIL");
-    free_hand(&h);
-}
 
 /* returns 1 if hand (sorted descending) is a wheel straight A-2-3-4-5 */
 static int is_wheel(const Hand *h) {
@@ -471,17 +419,104 @@ static void print_hand_display(const Hand *h) {
     printf(" "); print_card(h->head);
 }
 
-int main(void) {
-    check_name("AS KS QS JS TS", "Royal Flush");
-    check_name("9H 8H 7H 6H 5H", "Straight Flush, Nine high");
-    check_name("AS 5H 4D 3C 2S", "Straight, Five high");
-    check_name("AS AH AD AC KS", "Four of a Kind, Aces");
-    check_name("KS KH KD QS QH", "Full House, Kings full of Queens");
-    check_name("AS QS 9S 6S 3S", "Flush, Ace high");
-    check_name("9H 8S 7D 6C 5H", "Straight, Nine high");
-    check_name("JS JH JD AS KH", "Three of a Kind, Jacks");
-    check_name("AS AH KS KH QD", "Two Pair, Aces and Kings");
-    check_name("AS AH 9S 7D 3C", "Pair of Aces");
-    check_name("AS KH QD JC 9S", "High Card, Ace high");
+static void free_hand_nodes(Hand *h) {
+    Card *c = h->head, *nx;
+    while (c) { nx=c->next; free(c); c=nx; }
+    h->head=NULL; h->count=0;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <num_players>\n", argv[0]);
+        return 1;
+    }
+    int n = atoi(argv[1]);
+    if (n < 2 || n > 5) {
+        fprintf(stderr, "Error: num_players must be 2-5 (got %d)\n", n);
+        return 1;
+    }
+
+    srand((unsigned)time(NULL));
+
+    Hand deck    = deck_init();
+    Hand discard = {NULL, 0};
+    Hand players[5];
+    for (int i=0; i<n; i++) players[i] = (Hand){NULL, 0};
+
+    /* ── Deal ──────────────────────────────────────────────── */
+    printf("--- 5-Card Draw Poker Simulation ---\n");
+    printf("Players: %d\n\n", n);
+    deck_shuffle(&deck);
+    for (int i=0; i<n; i++) deal(&deck, &players[i], 5);
+
+    printf("[Deal]\n");
+    for (int i=0; i<n; i++) {
+        hand_sort(&players[i]);
+        printf("Player %d: ", i+1);
+        print_hand_display(&players[i]);
+        printf("\n");
+    }
+    printf("\n");
+
+    /* ── Draw ──────────────────────────────────────────────── */
+    printf("[Draw]\n");
+    for (int i=0; i<n; i++) {
+        int mask[5];
+        ai_discard(&players[i], mask);
+        int actual_discards = discard_cards(&players[i], &discard, mask);
+        int drawn = draw_cards(&deck, &players[i], actual_discards);
+        if (drawn < actual_discards) {
+            printf("(deck ran out — Player %d receives %d cards)\n", i+1, drawn);
+        }
+        printf("Player %d discards %d, draws %d\n", i+1, actual_discards, drawn);
+        hand_sort(&players[i]);
+    }
+    printf("\n");
+
+    /* ── Evaluate ──────────────────────────────────────────── */
+    HandResult results[5];
+    char names[5][64];
+    for (int i=0; i<n; i++) {
+        results[i] = hand_evaluate(&players[i]);
+        hand_name(&results[i], names[i], 64);
+    }
+
+    printf("[Final Hands]\n");
+    for (int i=0; i<n; i++) {
+        printf("Player %d: ", i+1);
+        print_hand_display(&players[i]);
+        printf("  [%s]\n", names[i]);
+    }
+    printf("\n");
+
+    /* ── Winner ────────────────────────────────────────────── */
+    /* find best rank */
+    int best = 0;
+    for (int i=1; i<n; i++)
+        if (hand_compare(&results[i], &results[best]) > 0) best=i;
+
+    /* collect all tied winners (ascending order) */
+    int winners[5], nw=0;
+    for (int i=0; i<n; i++)
+        if (hand_compare(&results[i], &results[best]) == 0) winners[nw++]=i;
+
+    if (nw == 1) {
+        printf("Winner: Player %d (%s)\n", winners[0]+1, names[winners[0]]);
+    } else {
+        printf("Winners: ");
+        for (int i=0; i<nw; i++) {
+            if (i>0 && i==nw-1 && nw==2) printf(" and ");
+            else if (i>0 && i==nw-1)     printf(", and ");
+            else if (i>0)                printf(", ");
+            printf("Player %d", winners[i]+1);
+        }
+        printf(" (%s)\n", names[winners[0]]);
+    }
+
+    /* ── Cleanup ───────────────────────────────────────────── */
+    free_hand_nodes(&deck);
+    free_hand_nodes(&discard);
+    for (int i=0; i<n; i++) free_hand_nodes(&players[i]);
+
     return 0;
 }
