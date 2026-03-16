@@ -306,7 +306,6 @@ static int hand_compare(const HandResult *a, const HandResult *b) {
     return 0;
 }
 
-
 /* Fills keep_mask[5] with 1=keep, 0=discard.
    Hand must be sorted descending before calling.
    Returns number of cards to discard. */
@@ -354,7 +353,6 @@ static int ai_discard(const Hand *h, int *keep_mask) {
     return discard_count;
 }
 
-
 /* Write human-readable hand name into buf (at least 64 bytes).
    Hand must already be sorted and evaluated. */
 static void hand_name(const HandResult *hr, char *buf, size_t sz) {
@@ -392,7 +390,6 @@ static void hand_name(const HandResult *hr, char *buf, size_t sz) {
             break;
     }
 }
-
 
 /* returns 1 if hand (sorted descending) is a wheel straight A-2-3-4-5 */
 static int is_wheel(const Hand *h) {
